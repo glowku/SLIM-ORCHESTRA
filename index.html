@@ -185,9 +185,11 @@ input.connect(comp);comp.connect(sh);sh.connect(lim);lim.connect(this.master);th
 const conv=this.ctx.createConvolver();const len=Math.floor(this.ctx.sampleRate*1.15),buf=this.ctx.createBuffer(2,len,this.ctx.sampleRate);
 for(let c=0;c<2;c++){const d=buf.getChannelData(c);for(let ii=0;ii<len;ii++)d[ii]=(Math.random()*2-1)*Math.pow(1-ii/len,2.6)}
 conv.buffer=buf;const wet=this.ctx.createGain();wet.gain.value=.09;conv.connect(wet);wet.connect(comp);
+// reverb AFTER volume buses so FX/Music sliders mute wet+dry together
+this.musicG.connect(conv);this.fxG.connect(conv);
 this._input=input;this._conv=conv;this._comp=comp;this._lim=lim},
 _isFx(n){return n==='hop'||n==='stretch'||n==='touch'||n==='wall'},
-ch(n){if(!this.bus[n]){const g=this.ctx.createGain();g.gain.value=.22;const dest=this._isFx(n)?this.fxG:this.musicG;g.connect(dest);g.connect(this._conv);this.bus[n]=g}return this.bus[n]},
+ch(n){if(!this.bus[n]){const g=this.ctx.createGain();g.gain.value=.22;const dest=this._isFx(n)?this.fxG:this.musicG;g.connect(dest);this.bus[n]=g}return this.bus[n]},
 // hard polyphony: refuse new sounds when full — prevents Brave audio death
 _voice(dur){if(!this.ctx)return 0;if(this._voices>=this._maxV)return 0;this._voices++;const self=this;const d=Math.max(.12,dur||.28);setTimeout(()=>{self._voices=Math.max(0,self._voices-1)},d*1000);return Math.max(.18,1-this._voices*.05)},
 canPlay(){return this.ctx&&this._voices<this._maxV},
@@ -488,23 +490,28 @@ if(this.grab){
   this.pos.y=Math.max(this.pos.y,restG);
   if(this.vel.y<0)this.vel.y=0;
 }
-this.vel.y-=32*h;const vCap=this._hardBounce?18:10;const sCap=this._hardBounce?48:36;if(this.vel.y>vCap)this.vel.y=vCap;if(this.vel.lengthSq()>sCap*sCap)this.vel.setLength(sCap);this.pos.addScaledVector(this.vel,h);
+// temporary bouncy after hard throw
+if(this._throwBounceT>0){this._throwBounceT-=h;if(this._throwBounceT<=0&&!window._hardOn)this._hardBounce=false}
+this.vel.y-=32*h;const vCap=this._hardBounce?20:14;const sCap=this._hardBounce?52:40;if(this.vel.y>vCap)this.vel.y=vCap;if(this.vel.lengthSq()>sCap*sCap)this.vel.setLength(sCap);this.pos.addScaledVector(this.vel,h);
 // Larger collision box
 const L=22;let hitWall=false;
 const hard=!!this._hardBounce;
-const bounceMul=hard?.92:.38;
+// even without hard mode, fast throws bounce more
+const spdXZ=Math.hypot(this.vel.x,this.vel.z);
+const bounceMul=hard?.94:(spdXZ>8?.72:.42);
 if(this.pos.x>L){this.pos.x=L;this.vel.x*=-bounceMul;if(hard)this.vel.y+=1.2+Math.random()*2;hitWall=true}
 if(this.pos.x<-L){this.pos.x=-L;this.vel.x*=-bounceMul;if(hard)this.vel.y+=1.2+Math.random()*2;hitWall=true}
 if(this.pos.z>L){this.pos.z=L;this.vel.z*=-bounceMul;if(hard)this.vel.y+=1.2+Math.random()*2;hitWall=true}
 if(this.pos.z<-L){this.pos.z=-L;this.vel.z*=-bounceMul;if(hard)this.vel.y+=1.2+Math.random()*2;hitWall=true}
 if(hitWall&&Snd.ctx&&performance.now()-(this.lastWall||0)>90){this.lastWall=performance.now();const spd=Math.hypot(this.vel.x,this.vel.z);Snd.wall(Math.min(1.25,.35+spd*.1));if(Math.random()<.55){this.faceMode=3;this.faceT=.4+Math.random()*.35}}
-const yMax=hard?14:10;
+const yMax=hard?16:13;
 if(this.pos.y>yMax){this.pos.y=yMax;this.vel.y=Math.min(this.vel.y,0);if(hard){this.vel.x+=(Math.random()-.5)*4;this.vel.z+=(Math.random()-.5)*4}}
 const rest=this.cfg.R*this.cfg.sy*.9;
 if(this.pos.y<rest){const imp=-this.vel.y;this.pos.y=rest;
   if(this.grab){this.vel.y=Math.max(0,this.vel.y)}
-  else if(hard&&imp>0.8){this.vel.y=Math.min(14,imp*.88+2.5+Math.random()*3);this.vel.x+=(Math.random()-.5)*6;this.vel.z+=(Math.random()-.5)*6;this.onHit(imp*1.2);this.yawV+=(Math.random()-.5)*8}
-  else if(imp>2.0){this.vel.y=imp*.28;this.onHit(imp)}
+  else if(hard&&imp>0.8){this.vel.y=Math.min(16,imp*.9+2.8+Math.random()*3.5);this.vel.x+=(Math.random()-.5)*7;this.vel.z+=(Math.random()-.5)*7;this.onHit(imp*1.2);this.yawV+=(Math.random()-.5)*9}
+  else if(imp>3.5){this.vel.y=imp*.55;this.vel.x*=.92;this.vel.z*=.92;this.onHit(imp)}
+  else if(imp>1.6){this.vel.y=imp*.38;this.onHit(imp)}
   else this.vel.y=0}
 const grounded=this.pos.y<=rest+.04&&Math.abs(this.vel.y)<.4;if(grounded){this.vel.x*=Math.max(0,1-(hard?1.2:3.2)*h);this.vel.z*=Math.max(0,1-(hard?1.2:3.2)*h);this.groundT+=h;if(this.groundT>.25)this.bounce=0;if(Math.random()<.022){this.syV+=(.09+Math.random()*.14)*(Math.random()<.5?-1:1)};if(hard&&this.groundT>.08&&Math.random()<.12){this.vel.y=5+Math.random()*6;this.vel.x+=(Math.random()-.5)*5;this.vel.z+=(Math.random()-.5)*5;this.groundT=0;this._hopSnd(.5)}}else this.groundT=0;
 this.syV+=(-120*(this.sy-1)-4.8*this.syV)*h;this.sy=THREE.MathUtils.clamp(this.sy+this.syV*h,.48,1.65);this.yaw+=this.yawV*h;
@@ -982,15 +989,66 @@ canvas.addEventListener('dblclick',e=>{
   }
 });
 
-canvas.addEventListener('pointerdown',e=>{lastI=performance.now();setR(e);if(!grab){const hits=ray.intersectObjects(jellies.map(j=>j.mesh),false);if(hits.length){const hit=hits[0],j=byM(hit.object);j.mesh.updateMatrixWorld();const lp=j.mesh.worldToLocal(hit.point.clone());const sig=j.cfg.R*.65,s2=2*sig*sig,w=[];for(let i=0;i<j.N;i++){const i3=i*3;const dx=j.base[i3]-lp.x,dy=j.base[i3+1]-lp.y,dz=j.base[i3+2]-lp.z;const g=Math.exp(-(dx*dx+dy*dy+dz*dz)/s2);if(g>.02)w.push({i,w:g})}const n=camera.getWorldDirection(new THREE.Vector3());plane.setFromNormalAndCoplanarPoint(n,hit.point);j.grab={ab:lp,w,plane:plane.clone(),tw:hit.point.clone(),bo:new THREE.Vector3().subVectors(j.pos,hit.point),bodyT:new THREE.Vector3(),locT:lp.clone(),down:performance.now(),moved:0,fused:false};grab=j;Snd.touch(.6);canvas.style.cursor='grabbing';tip.style.opacity=0;acts.set(e.pointerId,{m:'g'});return}}acts.set(e.pointerId,{m:'o',x:e.clientX,y:e.clientY})});
-addEventListener('pointermove',e=>{const st=acts.get(e.pointerId);if(grab&&st&&st.m==='g'){lastI=performance.now();setR(e);if(ray.ray.intersectPlane(grab.grab.plane,tmp)){const minY=grab.cfg.R*grab.cfg.sy*.95;if(tmp.y<minY)tmp.y=minY;grab.grab.tw.copy(tmp)}grab.grab.moved+=Math.abs(e.movementX||0)+Math.abs(e.movementY||0);return}if(st&&st.m==='o'){lastI=performance.now();const pts=[...acts.values()].filter(a=>a.m==='o');if(pts.length===2){const d=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);if(pinch!=null)orbit.tR=THREE.MathUtils.clamp(orbit.tR-(d-pinch)*.028,5,180);pinch=d}else pinch=null;orbit.tTh+=(e.clientX-st.x)*-.0042;orbit.tPh=THREE.MathUtils.clamp(orbit.tPh+(e.clientY-st.y)*-.0035,.35,1.45);st.x=e.clientX;st.y=e.clientY;return}if(!acts.size){const now=performance.now();if(now-lastH>50){lastH=now;setR(e);const hits=ray.intersectObjects(jellies.map(j=>j.mesh),false);if(hits.length){const j=byM(hits[0].object);tip.textContent=j.cfg.n+' · '+INSTRUMENTS[j.inst].label+' · '+j.cfg.persona;tip.style.left=Math.min(e.clientX+8,innerWidth-110)+'px';tip.style.top=(e.clientY+10)+'px';tip.style.opacity=1;canvas.style.cursor='grab'}else{tip.style.opacity=0;canvas.style.cursor='default'}}}});
-function release(e){const st=acts.get(e.pointerId);if(st&&st.m==='g'&&grab){const j=grab,dur=performance.now()-j.grab.down,tap=dur<180&&j.grab.moved<5;const ab=j.grab.ab.clone();j.grab=null;grab=null;if(tap){j.poke(ab,4.5);playNote(j.id,j.tap,.65);j.tap=(j.tap+1)%8}else{
-  // drop onto another slime → baby
-  let mate=null,bd=2.8;
-  for(const o of jellies){if(o===j)continue;const d=j.pos.distanceTo(o.pos);if(d<bd){bd=d;mate=o}}
-  if(mate){spawnBaby(j,mate)}
-  else{j.vel.multiplyScalar(1.05);j.vel.y+=1.1}
-}canvas.style.cursor='default'}acts.delete(e.pointerId);if(![...acts.values()].some(a=>a.m==='o'))pinch=null}
+canvas.addEventListener('pointerdown',e=>{lastI=performance.now();setR(e);if(!grab){const hits=ray.intersectObjects(jellies.map(j=>j.mesh),false);if(hits.length){const hit=hits[0],j=byM(hit.object);j.mesh.updateMatrixWorld();const lp=j.mesh.worldToLocal(hit.point.clone());const sig=j.cfg.R*.65,s2=2*sig*sig,w=[];for(let i=0;i<j.N;i++){const i3=i*3;const dx=j.base[i3]-lp.x,dy=j.base[i3+1]-lp.y,dz=j.base[i3+2]-lp.z;const g=Math.exp(-(dx*dx+dy*dy+dz*dz)/s2);if(g>.02)w.push({i,w:g})}const n=camera.getWorldDirection(new THREE.Vector3());plane.setFromNormalAndCoplanarPoint(n,hit.point);j.grab={ab:lp,w,plane:plane.clone(),tw:hit.point.clone(),bo:new THREE.Vector3().subVectors(j.pos,hit.point),bodyT:new THREE.Vector3(),locT:lp.clone(),down:performance.now(),moved:0,fused:false,hist:[],lastPx:e.clientX,lastPy:e.clientY,lastPt:performance.now()};grab=j;Snd.touch(.6);canvas.style.cursor='grabbing';tip.style.opacity=0;acts.set(e.pointerId,{m:'g'});return}}acts.set(e.pointerId,{m:'o',x:e.clientX,y:e.clientY})});
+addEventListener('pointermove',e=>{const st=acts.get(e.pointerId);if(grab&&st&&st.m==='g'){lastI=performance.now();setR(e);if(ray.ray.intersectPlane(grab.grab.plane,tmp)){const minY=grab.cfg.R*grab.cfg.sy*.95;if(tmp.y<minY)tmp.y=minY;grab.grab.tw.copy(tmp)}
+  // track pointer velocity for throw
+  const now=performance.now();
+  const g=grab.grab;
+  g.moved+=Math.abs(e.movementX||0)+Math.abs(e.movementY||0);
+  if(g.lastPt!=null){
+    const dt=Math.max(1,now-g.lastPt)*.001;
+    const sx=(e.clientX-g.lastPx)/dt, sy=(e.clientY-g.lastPy)/dt;
+    g.hist.push({sx,sy,t:now});
+    if(g.hist.length>8)g.hist.shift();
+  }
+  g.lastPx=e.clientX;g.lastPy=e.clientY;g.lastPt=now;
+  return}
+if(st&&st.m==='o'){lastI=performance.now();const pts=[...acts.values()].filter(a=>a.m==='o');if(pts.length===2){const d=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);if(pinch!=null)orbit.tR=THREE.MathUtils.clamp(orbit.tR-(d-pinch)*.028,5,180);pinch=d}else pinch=null;orbit.tTh+=(e.clientX-st.x)*-.0042;orbit.tPh=THREE.MathUtils.clamp(orbit.tPh+(e.clientY-st.y)*-.0035,.35,1.45);st.x=e.clientX;st.y=e.clientY;return}if(!acts.size){const now=performance.now();if(now-lastH>50){lastH=now;setR(e);const hits=ray.intersectObjects(jellies.map(j=>j.mesh),false);if(hits.length){const j=byM(hits[0].object);tip.textContent=j.cfg.n+' · '+INSTRUMENTS[j.inst].label+' · '+j.cfg.persona;tip.style.left=Math.min(e.clientX+8,innerWidth-110)+'px';tip.style.top=(e.clientY+10)+'px';tip.style.opacity=1;canvas.style.cursor='grab'}else{tip.style.opacity=0;canvas.style.cursor='default'}}}});
+function release(e){const st=acts.get(e.pointerId);if(st&&st.m==='g'&&grab){const j=grab,g=j.grab,dur=performance.now()-g.down,tap=dur<180&&g.moved<5;const ab=g.ab.clone();
+  // compute throw velocity from recent pointer motion
+  let avgSx=0,avgSy=0,nH=0;
+  const now=performance.now();
+  if(g.hist&&g.hist.length){
+    for(const h of g.hist){if(now-h.t<90){avgSx+=h.sx;avgSy+=h.sy;nH++}}
+    if(nH>0){avgSx/=nH;avgSy/=nH}
+  }
+  j.grab=null;grab=null;
+  if(tap){j.poke(ab,4.5);playNote(j.id,j.tap,.65);j.tap=(j.tap+1)%8}
+  else{
+    // drop onto another slime → baby (only if slow release)
+    const throwSpd=Math.hypot(avgSx,avgSy);
+    let mate=null,bd=2.8;
+    if(throwSpd<900){
+      for(const o of jellies){if(o===j)continue;const d=j.pos.distanceTo(o.pos);if(d<bd){bd=d;mate=o}}
+    }
+    if(mate){spawnBaby(j,mate)}
+    else{
+      // strong throw: map screen velocity → world velocity
+      // camera right / up basis
+      const right=new THREE.Vector3();const up=new THREE.Vector3();
+      right.setFromMatrixColumn(camera.matrixWorld,0).normalize();
+      up.setFromMatrixColumn(camera.matrixWorld,1).normalize();
+      // scale: fast flick = far launch
+      const power=Math.min(28, throwSpd*0.018);
+      const lift=Math.min(16, 2.5+throwSpd*0.009);
+      j.vel.x=right.x*avgSx*0.018 + up.x*(-avgSy)*0.012;
+      j.vel.y=lift + (-avgSy)*0.008;
+      j.vel.z=right.z*avgSx*0.018 + up.z*(-avgSy)*0.012;
+      // clamp to exciting but stable
+      const maxSpd=32;if(j.vel.length()>maxSpd)j.vel.setLength(maxSpd);
+      // temporary bouncy mode after hard throw
+      if(throwSpd>700){
+        j._hardBounce=true;j._throwBounceT=2.8+Math.min(2.5,throwSpd*0.0015);
+        j.faceMode=2;j.faceT=1.2;j.pulse(.55);
+        if(Snd.ctx)Snd.note('whoosh',pent(55,0),.35,Snd.ctx.currentTime);
+      }else{
+        j.vel.y=Math.max(j.vel.y,1.2);
+        j.faceMode=1;j.faceT=.8;
+      }
+    }
+  }
+  canvas.style.cursor='default'}
+acts.delete(e.pointerId);if(![...acts.values()].some(a=>a.m==='o'))pinch=null}
 addEventListener('pointerup',release);addEventListener('pointercancel',release);
 canvas.addEventListener('wheel',e=>{e.preventDefault();lastI=performance.now();orbit.tR=THREE.MathUtils.clamp(orbit.tR+e.deltaY*.008,5,180)},{passive:false});
 function applyVols(){
