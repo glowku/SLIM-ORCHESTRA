@@ -69,9 +69,9 @@ html,body{height:100%;overflow:hidden;font-family:Fredoka,system-ui,sans-serif;b
   <div id="ctrls2" class="ui" style="position:absolute;top:46px;right:10px;display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;max-width:68vw">
     <button class="btn" id="bArrow">🏹 Flèche</button>
     <button class="btn" id="bFeed">🍎 Nourrir</button>
-    <button class="btn" id="bDeco0">🏖️ Plage</button>
+    <button class="btn" id="bDeco0">☀️ Clair</button>
     <button class="btn" id="bDeco1">🌲 Forêt</button>
-    <button class="btn" id="bDeco2">🌃 Nuit</button>
+    <button class="btn" id="bDeco2">🌙 Nuit</button>
   </div>
   <div id="score"><canvas id="sc"></canvas></div>
   <div id="hint">Flèche = éclate · Pommes = nourrir · Décors · Dépose = bébé ∞</div>
@@ -194,22 +194,15 @@ function addCylObs(r,h,x,y,z,color){
 function setDecor(mode){
   clearDecor();
   document.querySelectorAll('#bDeco0,#bDeco1,#bDeco2').forEach((b,i)=>b.classList.toggle('on',i===mode));
-  if(mode===0){ // Plage — sable, rochers, parasol
+  if(mode===0){ // Clair — sol plat vide (décor de base)
     scene.background.set(0xFFF4EC);scene.fog.color.set(0xFFF4EC);scene.fog.near=42;scene.fog.far=110;
     ground.material.color.set(0xF3E4CC);stage.material.color.set(0xECD8BC);
     sun.color.set(0xfff2e4);sun.intensity=1.65;
-    addBoxObs(2.2,.9,1.6,-7,.45,5,0xC4A484);
-    addBoxObs(1.6,.7,1.4,6.5,.35,-4.5,0xB8956C);
-    addBoxObs(1.2,1.1,1.1,8,.55,3.2,0xA67C52);
-    // parasol pole + top
-    addCylObs(.08,2.4,3,1.2,-6,0xE8D5B7);
-    const top=new THREE.Mesh(new THREE.ConeGeometry(1.8,.35,10),new THREE.MeshStandardMaterial({color:0xFF6B9D,roughness:.7}));
-    top.position.set(3,2.55,-6);decoGroup.add(top);
+    // aucun objet
   }else if(mode===1){ // Forêt
     scene.background.set(0xE8F5E9);scene.fog.color.set(0xE8F5E9);scene.fog.near=30;scene.fog.far=90;
     ground.material.color.set(0x7CB342);stage.material.color.set(0x8BC34A);
     sun.color.set(0xe8ffd0);sun.intensity=1.35;
-    // trees (trunk + foliage AABB)
     const trees=[[-6,4],[-8,-3],[7,5],[5,-6],[-3,7],[8,-2],[-7,0],[4,8]];
     trees.forEach(([tx,tz])=>{
       addCylObs(.28,1.8,tx,.9,tz,0x5D4037);
@@ -217,24 +210,13 @@ function setDecor(mode){
       leaf.position.set(tx,2.2,tz);leaf.castShadow=true;decoGroup.add(leaf);
       obstacles.push({minX:tx-1.0,maxX:tx+1.0,minZ:tz-1.0,maxZ:tz+1.0,minY:1.3,maxY:3.2,mesh:leaf});
     });
-    // logs
     addBoxObs(2.4,.45,.55,-2,.22,-5,0x6D4C41);
     addBoxObs(1.8,.4,.5,6,.2,2,0x5D4037);
-  }else{ // Nuit
+  }else{ // Nuit — sol plat sombre, aucun objet
     scene.background.set(0x1A1A2E);scene.fog.color.set(0x1A1A2E);scene.fog.near=25;scene.fog.far=70;
     ground.material.color.set(0x2C2C44);stage.material.color.set(0x3A3A5C);
     sun.color.set(0xb0c4ff);sun.intensity=.55;
-    // moonlit pillars / buildings
-    addBoxObs(1.4,2.8,1.4,-7,1.4,4,0x4A4A6A,.6);
-    addBoxObs(1.8,2.0,1.2,6.5,1.0,-5,0x55557A,.55);
-    addBoxObs(1.1,3.2,1.1,8,1.6,2,0x3D3D5C,.5);
-    addBoxObs(2.0,1.4,1.6,-5,.7,-6,0x48486A,.6);
-    // glowing crystals
-    [[2,1.2,-3,0xC084FC],[ -3,1.0,5,0x4D96FF],[5,.9,6,0xF472B6]].forEach(([x,y,z,c])=>{
-      const cry=new THREE.Mesh(new THREE.OctahedronGeometry(.45,0),new THREE.MeshStandardMaterial({color:c,emissive:c,emissiveIntensity:.8,roughness:.3}));
-      cry.position.set(x,y,z);decoGroup.add(cry);
-      obstacles.push({minX:x-.4,maxX:x+.4,minZ:z-.4,maxZ:z+.4,minY:y-.45,maxY:y+.45,mesh:cry});
-    });
+    // aucun objet / pas de losanges
   }
 }
 setDecor(0);
@@ -605,17 +587,29 @@ if(stage>this.growStage){this.growStage=stage;
 const dx=this.home.x-this.pos.x,dz=this.home.z-this.pos.z;const dist=Math.hypot(dx,dz);
 const P=this.cfg;const persona=P.persona;
 const t=performance.now()*.001;
-// gentle home roam — stay in a shared area (not too spread, not one pile)
+// per-slime path personality (stable random)
+if(this._pathSpd==null){
+  this._pathSpd=.55+.7*Math.random();          // individual home pull speed
+  this._pathJitter=.6+1.2*Math.random();       // how wiggly the path is
+  this._pathRad=1.5+3.5*Math.random();         // preferred roam radius
+  this._camInterest=.15+.55*(P.curious||.4);   // how much they care about camera
+  this._pathPhase=Math.random()*6.28;
+}
+// home target wanders on a unique curved path
 this.homeWanderT=(this.homeWanderT||0)-h;
 if(this.homeWanderT<=0){
-  this.homeWanderT=6+Math.random()*8;
-  const ang=Math.random()*6.28,rad=1.2+Math.random()*3.2;
-  this.home.x=Math.cos(ang)*rad;this.home.z=Math.sin(ang)*rad;
+  this.homeWanderT=4+Math.random()*9*this._pathJitter;
+  // biased random walk: keep some continuity + noise
+  const prevAng=Math.atan2(this.home.z,this.home.x)||Math.random()*6.28;
+  const ang=prevAng+(Math.random()-.5)*2.4*this._pathJitter;
+  const rad=this._pathRad*(.55+Math.random()*.7);
+  this.home.x=Math.cos(ang)*rad+Math.sin(t*.3+this._pathPhase)*.8;
+  this.home.z=Math.sin(ang)*rad+Math.cos(t*.25+this._pathPhase)*.8;
   this.home.y=this.cfg.R*this.cfg.sy;
 }
-if(dist>1.2){
-  const far=Math.min(1,(dist-1.2)/5);
-  const pull=(1.1+far*2.8)*h;
+if(dist>0.9){
+  const far=Math.min(1,(dist-0.9)/6);
+  const pull=(0.55+far*1.6)*this._pathSpd*h;
   this.vel.x+=(dx/dist)*pull;this.vel.z+=(dz/dist)*pull;
 }
 // air drag so they plane less when high or fast
@@ -628,27 +622,26 @@ if(dist>1.2){
     this.vel.y*=Math.max(0,1-0.7*h);
   }
 }
-// continuous random wander for all
+// continuous random wander — more chaotic, each at own rhythm
 this.wanderT-=h;
 if(this.wanderT<=0){
-  this.wanderT=.8+Math.random()*2.2;
+  this.wanderT=.5+Math.random()*(1.8+this._pathJitter);
   const ang=Math.random()*6.28;
-  const str=P.wander*(.4+Math.random()*.55);
+  const str=P.wander*(.25+Math.random()*.5)*this._pathSpd;
   this.vel.x+=Math.cos(ang)*str;
   this.vel.z+=Math.sin(ang)*str;
+  // occasional sideways drift along personal phase
+  this.vel.x+=Math.sin(t*.7+this._pathPhase)*.15*this._pathJitter;
+  this.vel.z+=Math.cos(t*.55+this._pathPhase)*.15*this._pathJitter;
 }
-// tendency to approach the camera (all personas)
+// mild, individual interest toward camera (much softer than before)
 {
   const cx=camera.position.x-this.pos.x,cz=camera.position.z-this.pos.z;
   const cl=Math.hypot(cx,cz)||1;
-  // soft pull when far, gentle when already close; shy resists a bit less strongly
-  const shyFactor=persona==='shy'?0.35:1;
-  const cur=(P.curious||.4);
-  if(cl>2.2){
-    const pull=(0.55+cur*0.85)*shyFactor*h*18*(cl>8?1.25:1);
+  const shyFactor=persona==='shy'?0.2:1;
+  if(cl>3.5){
+    const pull=this._camInterest*shyFactor*h*4.5*(cl>10?1.15:1);
     this.vel.x+=(cx/cl)*pull;this.vel.z+=(cz/cl)*pull;
-  }else if(cl>0.8&&persona!=='shy'){
-    this.vel.x+=(cx/cl)*0.35*h*10;this.vel.z+=(cz/cl)*0.35*h*10;
   }
 }
 // persona behaviors (more lively)
@@ -661,7 +654,7 @@ if(persona==='bouncer'){
   if(this.groundT>.25&&Math.random()<P.hopChance*h*45){this.vel.y=2.2+Math.random()*1.8;this.groundT=0;this._hopSnd(.3)}
 }else if(persona==='explorer'){
   if(Math.random()<.04*h*50){const ang=Math.random()*6.28;this.vel.x+=Math.cos(ang)*P.wander*1.2;this.vel.z+=Math.sin(ang)*P.wander*1.2}
-  if(P.curious>0&&Math.random()<.018){const cx=camera.position.x-this.pos.x,cz=camera.position.z-this.pos.z;const cl=Math.hypot(cx,cz)||1;this.vel.x+=(cx/cl)*P.curious*1.8;this.vel.z+=(cz/cl)*P.curious*1.8}
+  if(P.curious>0&&Math.random()<.012){const cx=camera.position.x-this.pos.x,cz=camera.position.z-this.pos.z;const cl=Math.hypot(cx,cz)||1;this.vel.x+=(cx/cl)*P.curious*.55;this.vel.z+=(cz/cl)*P.curious*.55}
   if(this.groundT>.15&&Math.random()<P.hopChance*h*55){this.vel.y=2.8+Math.random()*2.3;this.groundT=0;this._hopSnd(.4)}
 }else if(persona==='shy'){
   const cx=camera.position.x-this.pos.x,cz=camera.position.z-this.pos.z;const cl=Math.hypot(cx,cz);
@@ -781,7 +774,12 @@ if(this.bubbles){
 this.face(dt)}
 face(dt){
 this.blinkT-=dt;
-if(this.blinkT<=0){this.blinkT=1.4+Math.random()*2.6;this.blink=.12}
+if(this.blinkT<=0){
+  // random blink rhythm — sometimes double-blink
+  this.blinkT=1.1+Math.random()*3.2;
+  this.blink=.16+Math.random()*.06;
+  if(Math.random()<.22)this.blinkT=.12+Math.random()*.1; // quick second blink
+}
 if(this.blink>0)this.blink-=dt;
 if(this.faceT>0){this.faceT-=dt;if(this.faceT<=0){this.faceMode=0;this.facePhase=0}}
 else if(Math.random()<0.007){this.faceMode=(()=>{const r=Math.random();if(r<.05)return 16;if(r<.1)return 15;if(r<.14)return 14;if(r<.18)return 13;if(r<.22)return 12;if(r<.27)return 9;if(r<.31)return 10;if(r<.35)return 11;if(r<.4)return 6;if(r<.45)return 7;if(r<.5)return 8;if(r<.65)return 2;return 1+Math.floor(Math.random()*5)})();this.faceT=1.3+Math.random()*1.8;this.facePhase=0}
@@ -834,7 +832,7 @@ if(mode===0){
 }else if(mode===16){ // derp / silly
   eyeOpen=1.6;pupOff=.6;pupSc=.7;openOn=true;smileOn=false;mouthScX=1.4;mouthScY=1.1;blushO=.1;tongueOn=true;
 }
-if(this.blink>0&&mode===0){eyeOpen=.08;lidUp=true}
+if(this.blink>0){eyeOpen=.05;lidUp=true;lidLo=false;pupSc=0}
 if(this.hugeEyesT>0){this.hugeEyesT-=dt;eyeOpen=1.85+.25*Math.sin(ph*8);pupOff=.3;pupSc=.55;spark=true}
 if(this.grab){eyeOpen=Math.max(eyeOpen,1.4);openOn=true;smileOn=false}
 // random huge eyes trigger
